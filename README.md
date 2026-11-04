@@ -24,7 +24,7 @@
 ```bash
 cargo run --release      # 启动窗口界面
 cargo build --release    # 产物：target/release/codex-auth-helper(.exe)
-cargo test               # 13 个单测：base64url / JWT 解码 / JSON 提取 / 会话解析 / 字体回落 / 图标解码 / 窗口属性 / 运行态锁定
+cargo test               # 14 个单测：base64url / JWT 解码 / JSON 提取 / 会话解析 / 字体回落链 / 图标解码 / 窗口属性 / 运行态锁定
 ```
 
 选浏览器 → 点「生成 auth.json」；失败时卡片里会给出针对当前原因的处理建议，改完点「重试」即可。
@@ -48,8 +48,9 @@ cargo test               # 13 个单测：base64url / JWT 解码 / JSON 提取 /
   三平台的**窗口 / 任务栏图标**都在启动时从 ICO 里挑 64px 的 PNG 帧交给 egui；
   Windows 的 **exe 文件图标**再由 `app.rc` + `build.rs` 编进 `.res` 资源。
 - `assets/NotoEmoji.ttf`：内置单色轮廓 emoji 字体（SIL OFL，许可证见
-  `assets/OFL-NotoEmoji.txt`），与中文回落字体一起挂在默认 Proportional / Monospace
-  字体链末尾。系统彩色 emoji 字体多是位图/COLR，egui 的 `ab_glyph` 读不出轮廓会
+  `assets/OFL-NotoEmoji.txt`），挂在默认 Proportional / Monospace 回落链中，
+  紧跟 Latin（以及可用的中文）字体之后、egui 自带 emoji 子集之前。
+  系统彩色 emoji 字体多是位图/COLR，egui 的 `ab_glyph` 读不出轮廓会
   渲染成空白，所以三平台统一用内置字体，文案里可以直接写 emoji。
 - `app.rc`：ICON + VERSIONINFO（文件说明、版本、版权，资源 ID 均为 1）
 - `build.rs`：自动在 `%RC%` 或 Windows SDK 里找 `rc.exe` 编成 `.res` 再交给链接器；
@@ -61,6 +62,11 @@ cargo test               # 13 个单测：base64url / JWT 解码 / JSON 提取 /
   macOS `~/Library/Application Support`、Linux `~/.config`）。
 - **关闭浏览器**：Windows 用 `taskkill`，mac/linux 用 `pkill`。unix 上浏览器不独占锁
   Cookies 文件，多数情况无需关闭即可直接读取。
+- **中文字体**：程序不内置 CJK 字体，启动时按候选路径探测系统字体，找得到才加入回落链；
+  找不到不阻断启动，界面退化为 Latin + 内置 emoji（中文会缺字）。Linux 精简镜像建议装
+  `fonts-wqy-microhei`；`ab_glyph` 只认 TrueType `glyf` 轮廓，部分 CFF/OTF 的
+  Noto CJK `.ttc` 可能不生效。字体单测会按宿主是否装有中文字体自动选择对应分支，
+  因此在无中文字体的 CI 上同样通过。
 - **窗口禁用最大化**：标题栏只保留最小化 / 关闭，Windows 上去掉 `WS_MAXIMIZEBOX` 后
   双击标题栏、`Win+↑`、任务栏右键的「最大化」也一并失效；macOS 禁用绿色 zoom 按钮。
   窗口仍可用边框手动调整大小。X11 下 winit 不提供该能力，最大化按钮可能仍在（Wayland 正常）。

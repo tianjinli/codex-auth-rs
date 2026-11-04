@@ -194,28 +194,43 @@ fn setup_visuals(ctx: &egui::Context) {
     ctx.set_visuals(v);
 }
 
-/// 字体回落链：默认 Latin → 中文 → 内置完整 emoji → egui 自带的两个 emoji 子集。
+/// 系统 CJK 字体候选路径，按优先级排列。中文不随程序内置（体积太大），
+/// 依赖宿主系统；找不到时界面自动退化为 Latin + 内置 emoji，不阻断启动。
+///
+/// 注意 ab_glyph 只认 TrueType `glyf` 轮廓，读不了 CFF/OTF，所以 Linux 上
+/// 把文泉驿这类 TrueType 字体排在 Noto CJK 的 .ttc 前面。
+const CJK_FONT_CANDIDATES: &[&str] = &[
+    // Windows
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyh.ttf",
+    r"C:\Windows\Fonts\simhei.ttf",
+    // macOS
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    // Linux 常见发行版
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+];
+
+fn find_cjk_font() -> Option<Vec<u8>> {
+    CJK_FONT_CANDIDATES
+        .iter()
+        .find_map(|p| std::fs::read(p).ok())
+}
+
+/// 字体回落链：默认 Latin → 中文（若有）→ 内置完整 emoji → egui 自带的 emoji 子集。
 ///
 /// egui 自带字体不含 CJK；系统自带的彩色 emoji 字体（Windows Segoe UI Emoji 的
 /// COLR、macOS Apple Color Emoji 的 sbix、Linux Noto Color Emoji 的 CBDT）在
 /// ab_glyph 里读不出轮廓，容易渲染成空白。所以直接内置一份单色轮廓版
 /// Noto Emoji（OFL，见 assets/OFL-NotoEmoji.txt），三平台表现一致。
-fn setup_fonts(ctx: &egui::Context) {
+///
+/// 返回 `has_cjk` 是为了让单测能按宿主环境验证对应分支：CI 的最小 Linux 镜像
+/// 通常没装中文字体，不能无条件断言覆盖「中」。
+fn build_font_definitions() -> (egui::FontDefinitions, bool) {
     const EMOJI_TTF: &[u8] = include_bytes!("../assets/NotoEmoji.ttf");
-
-    let cjk_candidates: &[&str] = &[
-        // Windows
-        r"C:\Windows\Fonts\msyh.ttc",
-        r"C:\Windows\Fonts\msyh.ttf",
-        r"C:\Windows\Fonts\simhei.ttf",
-        // macOS
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        // Linux 常见发行版打包的 Noto CJK / 文泉驿
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-    ];
 
     let mut fonts = egui::FontDefinitions::default();
 
@@ -229,26 +244,25 @@ fn setup_fonts(ctx: &egui::Context) {
     );
 
     // 中文字体：找得到才加，找不到不影响 emoji 与 Latin。
-    let cjk = cjk_candidates
-        .iter()
-        .find_map(|p| std::fs::read(p).ok().map(|d| (*p, d)));
-    if let Some((_, data)) = &cjk {
+    let cjk = find_cjk_font();
+    let has_cjk = cjk.is_some();
+    if let Some(data) = cjk {
         fonts
             .font_data
-            .insert("cjk".to_owned(), egui::FontData::from_owned(data.clone()));
+            .insert("cjk".to_owned(), egui::FontData::from_owned(data));
     }
 
     if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
         // 先走默认 Latin 字形，缺的字依次回落到中文 / 完整 emoji
         let mut at = 1;
-        if cjk.is_some() {
+        if has_cjk {
             fam.insert(at, "cjk".to_owned());
             at += 1;
         }
         fam.insert(at, "emoji-full".to_owned());
     }
     if let Some(fam) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
-        if cjk.is_some() {
+        if has_cjk {
             fam.push("cjk".to_owned());
         }
         let at = fam
@@ -258,7 +272,11 @@ fn setup_fonts(ctx: &egui::Context) {
         fam.insert(at, "emoji-full".to_owned());
     }
 
-    ctx.set_fonts(fonts);
+    (fonts, has_cjk)
+}
+
+fn setup_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(build_font_definitions().0);
 }
 
 impl eframe::App for CodexApp {
@@ -662,17 +680,54 @@ mod tests {
 
     #[test]
     fn fonts_cover_cjk_and_full_emoji_range() {
+        let (defs, has_cjk) = build_font_definitions();
         let ctx = egui::Context::default();
-        setup_fonts(&ctx);
+        ctx.set_fonts(defs);
         let _ = ctx.run(egui::RawInput::default(), |_| {}); // 初始化字体图集
         let id = egui::FontId::new(14.0, egui::FontFamily::Proportional);
         ctx.fonts(|f| {
-            assert!(f.has_glyphs(&id, "中"));
-            // 这两个是 egui 内置 emoji 子集里没有、必须靠内置完整字体兜底的码位
+            // emoji 来自随程序内置的 NotoEmoji.ttf，与宿主装了什么字体无关，必须始终覆盖。
+            // 这两个码位是 egui 内置 emoji 子集里没有的，只能靠完整字体兜底。
             assert!(f.has_glyph(&id, '🔐'));
             assert!(f.has_glyph(&id, '🫠'));
+            // 中文字形依赖宿主系统字体：CI 的最小 Linux 镜像往往没装，
+            // 此时回落链只有 Latin + emoji，不能硬性要求覆盖「中」。
+            if has_cjk {
+                assert!(f.has_glyphs(&id, "中"));
+            }
         });
         let mono = egui::FontId::new(14.0, egui::FontFamily::Monospace);
         ctx.fonts(|f| assert!(f.has_glyph(&mono, '🚀')));
+    }
+
+    #[test]
+    fn font_fallback_chain_matches_host_fonts() {
+        let (defs, has_cjk) = build_font_definitions();
+        assert!(defs.font_data.contains_key("emoji-full"));
+        // 有无 cjk 必须与宿主探测结果一致：两条分支都被验证，而不是靠跳过测试。
+        assert_eq!(defs.font_data.contains_key("cjk"), has_cjk);
+
+        let prop = defs
+            .families
+            .get(&egui::FontFamily::Proportional)
+            .expect("Proportional 回落链");
+        let mono = defs
+            .families
+            .get(&egui::FontFamily::Monospace)
+            .expect("Monospace 回落链");
+        for fam in [prop, mono] {
+            let full = fam
+                .iter()
+                .position(|f| f == "emoji-full")
+                .expect("emoji-full 必须在两族回落链里");
+            // 完整 emoji 要排在 egui 内置的小 emoji 子集之前，否则新码位仍会缺字
+            if let Some(builtin) = fam.iter().position(|f| f == "NotoEmoji-Regular") {
+                assert!(full < builtin, "emoji-full 必须优先于内置 emoji 子集");
+            }
+            assert_eq!(fam.iter().any(|f| f == "cjk"), has_cjk);
+        }
+        if has_cjk {
+            assert_eq!(prop[1].as_str(), "cjk", "中文字体应紧跟默认 Latin 之后");
+        }
     }
 }
