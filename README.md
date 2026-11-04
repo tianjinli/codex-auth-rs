@@ -5,8 +5,8 @@
 
 - 语言 / 平台：Rust，**Windows / macOS / Linux** 三平台一套代码（UI 用 eframe/egui）
 - 形态：纯 GUI，单文件可执行（Windows 约 5.4 MB；mac/linux 为对应二进制）。
-  Windows 以 GUI 子系统启动，不会弹出 cmd 黑窗口；拉起 `taskkill` / `reg` 等控制台
-  子进程时也会复用隐藏控制台，避免闪窗。
+  Windows 以 GUI 子系统启动，进程自身不挂控制台；所有子进程统一带
+  `CREATE_NO_WINDOW`，不会弹出 cmd 黑窗口，启动也没有窗口闪烁。
 - 核心依赖：`serde` / `serde_json` / `chrono` / `eframe`
 
 > 本项目的思路与 Synthetic `id_token` 构造方案源自 [zhishile/codex-auth-helper](https://github.com/zhishile/codex-auth-helper)（Chrome 扩展版），在此向原作者致敬。本项目是其思路的 Rust 独立实现，界面沿用同一套自绘深色卡片风格。
@@ -67,9 +67,13 @@ cargo test               # 14 个单测：base64url / JWT 解码 / JSON 提取 /
   `fonts-wqy-microhei`；`ab_glyph` 只认 TrueType `glyf` 轮廓，部分 CFF/OTF 的
   Noto CJK `.ttc` 可能不生效。字体单测会按宿主是否装有中文字体自动选择对应分支，
   因此在无中文字体的 CI 上同样通过。
-- **窗口禁用最大化**：标题栏只保留最小化 / 关闭，Windows 上去掉 `WS_MAXIMIZEBOX` 后
-  双击标题栏、`Win+↑`、任务栏右键的「最大化」也一并失效；macOS 禁用绿色 zoom 按钮。
-  窗口仍可用边框手动调整大小。X11 下 winit 不提供该能力，最大化按钮可能仍在（Wayland 正常）。
+- **窗口固定尺寸**：标题栏只保留最小化 / 关闭，不能用边框拖动调整大小，也不显示最大化按钮。
+  Windows 上去掉 `WS_THICKFRAME` 与 `WS_MAXIMIZEBOX`，双击标题栏、`Win+↑`、
+  任务栏右键的「最大化」一并失效；macOS 禁用绿色 zoom 按钮与窗口缩放。
+  X11 下 winit 对这组设置的支援不完整，个别桌面环境可能仍允许调整（Wayland 正常）。
+- **启动无控制台闪烁**：不再用 `AllocConsole` + `ShowWindow(SW_HIDE)` 造隐藏控制台
+  （先显示再隐藏会闪一帧）；子进程黑窗口统一由 `auth::hidden()` 的
+  `CREATE_NO_WINDOW` 解决，包括 `explorer.exe`。
 - **权限收紧**：写完 `auth.json` 后 Windows 走 `icacls /inheritance:r`，mac/linux 直接 `chmod 600`。
 - **macOS 注意**：无头浏览器解密 Cookie 需要 Keychain 允许（系统可能弹窗要求授权
   "chrome 要使用钥匙串"）；Linux 需要 gnome-keyring / kwallet 处于解锁状态。

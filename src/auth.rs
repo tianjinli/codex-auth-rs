@@ -353,8 +353,11 @@ pub fn list_profiles(udd: &str) -> Vec<String> {
 // 进程工具
 // ---------------------------------------------------------------------------
 
+/// GUI 子系统进程没有自己的控制台，拉起 taskkill / reg / icacls 这类控制台程序时
+/// Windows 会给它新建一个黑窗口。显式带上这个标志即可从源头避免，
+/// 不需要（也不应该）用 AllocConsole 再隐藏一次 —— 那会造成启动闪烁。
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn hidden(cmd: &mut Command) {
     #[cfg(windows)]

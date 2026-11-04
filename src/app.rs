@@ -159,9 +159,12 @@ impl CodexApp {
         }
         #[cfg(windows)]
         {
-            // explorer /select,路径：打开资源管理器并选中该文件
+            use std::os::windows::process::CommandExt;
+            // explorer /select,路径：打开资源管理器并选中该文件。
+            // 与其它子进程统一带 CREATE_NO_WINDOW（GUI 程序会忽略该标志）。
             let _ = std::process::Command::new("explorer.exe")
                 .arg(format!("/select,{}", path))
+                .creation_flags(auth::CREATE_NO_WINDOW)
                 .spawn();
         }
         #[cfg(target_os = "macos")]

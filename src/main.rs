@@ -2,7 +2,10 @@
 //!
 //! 纯 GUI（eframe/egui），Windows / macOS / Linux 一套代码。
 
-// Windows 下以 GUI 子系统启动：不会再额外弹出一个 cmd 黑窗口。
+// Windows 下以 GUI 子系统启动，进程自身不挂控制台。所有子进程统一由
+// auth::hidden() 带上 CREATE_NO_WINDOW，从源头避免黑窗口。
+// 切勿改回 AllocConsole + ShowWindow(SW_HIDE)：那会先创建并显示控制台窗口、
+// 再把它隐藏，这一帧就是启动瞬间「有个窗口开了又关」的闪烁来源。
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod app;
@@ -50,42 +53,14 @@ fn window_icon() -> Option<egui::IconData> {
     eframe::icon_data::from_png_bytes(png).ok()
 }
 
-/// GUI 子系统进程自身没有控制台。它拉起 taskkill / reg / icacls 这类控制台程序时，
-/// Windows 会给子进程新建一个可见黑窗口。这里先给自己挂一个隐藏控制台，
-/// 子进程继承它就不会再弹窗（比逐个 Command 设置 CREATE_NO_WINDOW 更省心）。
-#[cfg(windows)]
-fn hide_child_consoles() {
-    use std::ffi::c_void;
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn AllocConsole() -> i32;
-        fn GetConsoleWindow() -> *mut c_void;
-    }
-    #[link(name = "user32")]
-    extern "system" {
-        fn ShowWindow(hwnd: *mut c_void, n_cmd_show: i32) -> i32;
-    }
-
-    const SW_HIDE: i32 = 0;
-    unsafe {
-        if AllocConsole() != 0 {
-            let hwnd = GetConsoleWindow();
-            if !hwnd.is_null() {
-                ShowWindow(hwnd, SW_HIDE);
-            }
-        }
-    }
-}
-
-/// 窗口属性。这里统一定义，方便单测校验（尤其是「禁用最大化」）。
+/// 窗口属性。这里统一定义，方便单测校验（固定尺寸 + 禁用最大化）。
 fn viewport() -> egui::ViewportBuilder {
     let mut vp = egui::ViewportBuilder::default()
         .with_inner_size([580.0, 464.0])
-        .with_min_inner_size([520.0, 430.0])
-        // 禁用最大化：Windows 去掉 WS_MAXIMIZEBOX（最大化按钮置灰，双击标题栏、
-        // Win+↑、任务栏菜单的「最大化」一并失效），macOS 禁用绿色 zoom 按钮。
-        // 窗口仍可用边框手动调整大小；X11 下 winit 不支持该设置，见 README。
+        // 固定尺寸：Windows 去掉 WS_THICKFRAME，边框不能拖，双击标题栏 /
+        // Win+↑ 也不再改变大小；macOS 同步禁用窗口缩放。
+        .with_resizable(false)
+        // 与 resizable 是两个独立开关，显式再关一次最大化按钮，双保险。
         .with_maximize_button(false)
         .with_maximized(false);
     if let Some(icon) = window_icon() {
@@ -95,9 +70,6 @@ fn viewport() -> egui::ViewportBuilder {
 }
 
 fn main() -> eframe::Result<()> {
-    #[cfg(windows)]
-    hide_child_consoles();
-
     let options = eframe::NativeOptions {
         viewport: viewport(),
         ..Default::default()
@@ -126,11 +98,11 @@ mod tests {
     }
 
     #[test]
-    fn maximize_is_disabled_but_window_is_still_resizable() {
+    fn window_is_fixed_size_and_not_maximizable() {
         let vp = viewport();
+        assert_eq!(vp.resizable, Some(false));
         assert_eq!(vp.maximize_button, Some(false));
         assert_eq!(vp.maximized, Some(false));
-        assert_ne!(vp.resizable, Some(false));
         assert!(vp.icon.is_some());
     }
 }
