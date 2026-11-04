@@ -1,0 +1,19 @@
+[package]
+name = "codex-auth-helper"
+version = "1.0.0"
+edition = "2021"
+description = "Codex 登录助手 — 从本地浏览器读取 ChatGPT 会话并生成 Codex 的 auth.json"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+eframe = "0.29"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

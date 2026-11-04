@@ -1,0 +1,29 @@
+#pragma code_page(65001)
+
+1 ICON "assets/app.ico"
+
+1 VERSIONINFO
+FILEVERSION     1,0,0,0
+PRODUCTVERSION  1,0,0,0
+FILEOS          0x40004L
+FILETYPE        0x1L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "FileDescription", "Codex 登录助手"
+            VALUE "FileVersion",     "1.0.0"
+            VALUE "InternalName",    "codex-auth-helper"
+            VALUE "OriginalFilename","codex-auth-helper.exe"
+            VALUE "ProductName",     "Codex 登录助手"
+            VALUE "ProductVersion",  "1.0.0"
+            VALUE "LegalCopyright",  "MIT License"
+            VALUE "Comments",        "本地读取 ChatGPT 会话，生成 Codex auth.json"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

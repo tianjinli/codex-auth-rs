@@ -1,0 +1,12 @@
+# 构建产物
+/target
+
+# 开发自检 / 界面预览位图
+/shots/*.bmp
+/shots/*.png
+
+# 本地私有配置：rsproxy 镜像源只适合本机，CI 用官方源
+/.cargo/config.toml
+
+# 本地运行痕迹
+*.bak-*

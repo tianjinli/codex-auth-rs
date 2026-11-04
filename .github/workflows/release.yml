@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: codex-auth-helper.exe
+            suffix: windows-x64
+          - os: macos-latest
+            artifact: codex-auth-helper
+            suffix: macos-arm64
+          - os: ubuntu-latest
+            artifact: codex-auth-helper
+            suffix: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Pack (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path target/release/codex-auth-helper.exe -DestinationPath "codex-auth-helper-${{ github.ref_name }}-${{ matrix.suffix }}.zip"
+
+      - name: Pack (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x target/release/codex-auth-helper
+          tar czf "codex-auth-helper-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz" -C target/release codex-auth-helper
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            codex-auth-helper-${{ github.ref_name }}-*.zip
+            codex-auth-helper-${{ github.ref_name }}-*.tar.gz
+          generate_release_notes: true
